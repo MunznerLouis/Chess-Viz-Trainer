@@ -12,12 +12,8 @@ npm --version
 
 ## Setup (one-time)
 ```bash
-# Create project
-npm create vite@latest chess-trainer -- --template react
-cd chess-trainer
 npm install
-# Copy your .jsx into src/App.jsx
-# Empty out src/App.css and src/index.css
+npm run dev
 ```
 ---
 
@@ -32,18 +28,6 @@ npm install
 
 ---
 
-## Install packages
-```bash
-# Add a dependency
-npm install <package-name>
-# Add a dev dependency
-npm install -D <package-name>
-# Remove a package
-npm uninstall <package-name>
-# Reinstall everything (if node_modules is broken)
-rm -rf node_modules
-npm install
-```
 
 ## Useful shortcuts
 |Action| Command|
@@ -53,20 +37,6 @@ npm install
 | Clear Vite cache | npx vite --force |
 | Check installed packages | npm list --depth=0 |
 | Update all packages | npm update |
-
-## Project structure
-
-```
-chess-trainer/
-├── src/
-│ ├── App.jsx ← your main component goes here
-│ ├── App.css ← can be empty (inline styles)
-│ ├── index.css ← can be empty
-│ └── main.jsx ← entry point (don't touch)
-├── index.html
-├── package.json
-└── vite.config.js
-```
 
 ## Troubleshooting
 
