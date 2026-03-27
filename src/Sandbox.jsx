@@ -60,6 +60,7 @@ function Sandbox({ onBack }) {
   const [dragPiece, setDragPiece] = useState(null);
   const [dragPos, setDragPos] = useState(null);
   const [dragFromSq, setDragFromSq] = useState(null);
+  const [moveList, setMoveList] = useState([]);
 
   // Setup mode state — pre-loaded with starting position
   const [setupBoard, setSetupBoard] = useState(() => {
@@ -88,6 +89,7 @@ function Sandbox({ onBack }) {
     setHistory([fen]);
     setHistoryIdx(0);
     setPromoSquare(null);
+    setMoveList([]);
     setMode("play");
   }, []);
 
@@ -143,14 +145,22 @@ function Sandbox({ onBack }) {
     const newHist = [...history.slice(0, historyIdx + 1), g.fen()];
     setHistory(newHist);
     setHistoryIdx(newHist.length - 1);
+    setMoveList((prev) => [...prev.slice(0, historyIdx), { san: move.san, color: move.color }]);
     return true;
-  }, [game, history, historyIdx]);
+  }, [game, history, historyIdx, moveList]);
 
   // Handle clicking a square in play mode
   const handleSquareClick = useCallback((sq) => {
     if (!game || promoSquare) return;
 
     const piece = game.get(sq);
+
+    // Clicking the selected square deselects it
+    if (selected === sq) {
+      setSelected(null);
+      setLegalMoves([]);
+      return;
+    }
 
     // If a piece is already selected
     if (selected) {
@@ -236,6 +246,7 @@ function Sandbox({ onBack }) {
       setSelected(null);
       setLegalMoves([]);
       setLastMove(null);
+      setMoveList([]);
     }
   }, [history]);
 
@@ -693,7 +704,35 @@ function Sandbox({ onBack }) {
         </button>
       </div>
 
-      {renderBoard()}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", justifyContent: "center", flexWrap: "wrap" }}>
+        {renderBoard()}
+        {/* Move feed */}
+        <div style={{
+          background: CARD, border: `1px solid ${CARD_BORDER}`, borderRadius: 8,
+          width: 180, maxHeight: "min(88vw,560px)", overflowY: "auto",
+          padding: "8px 0", flexShrink: 0,
+        }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: TEXT, padding: "0 10px 6px", fontWeight: 600, opacity: 0.6 }}>
+            Moves
+          </div>
+          {(() => {
+            const displayed = moveList.slice(0, historyIdx);
+            const pairs = [];
+            for (let i = 0; i < displayed.length; i += 2) {
+              pairs.push({ num: Math.floor(i / 2) + 1, white: displayed[i], black: displayed[i + 1] });
+            }
+            return pairs.length > 0 ? pairs.map(({ num, white, black }) => (
+              <div key={num} style={{ display: "flex", gap: 4, padding: "3px 10px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}>
+                <span style={{ color: TEXT, opacity: 0.4, minWidth: 18 }}>{num}.</span>
+                <span style={{ color: TEXT_BRIGHT, flex: 1 }}>{white?.san || ""}</span>
+                <span style={{ color: TEXT_BRIGHT, flex: 1 }}>{black?.san || ""}</span>
+              </div>
+            )) : (
+              <div style={{ padding: "8px 10px", fontSize: 12, color: TEXT, opacity: 0.4 }}>No moves yet</div>
+            );
+          })()}
+        </div>
+      </div>
 
       {/* Controls */}
       <div style={{

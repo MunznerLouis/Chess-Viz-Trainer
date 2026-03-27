@@ -134,7 +134,6 @@ const getThreats = (piece, all) => {
 };
 
 const genPos = (pc, pn, on) => {
-  const opp = pc === "w" ? "b" : "w";
   const allSquares = [];
   for (const c of C) for (const r of R) allSquares.push(c + r);
 
@@ -143,25 +142,52 @@ const genPos = (pc, pn, on) => {
   const pieces = [];
 
   for (let i = 0; i < pn; i++) {
-    pieces.push({
-      color: pc,
-      type: types[i % types.length],
-      square: available.pop(),
-      isPlayer: true
-    });
+    const color = pc === "h" ? (i % 2 === 0 ? "w" : "b") : pc;
+    pieces.push({ color, type: types[i % types.length], square: available.pop(), isPlayer: true });
   }
 
+  const oppFor = pc === "w" ? "b" : pc === "b" ? "w" : null;
   for (let i = 0; i < on; i++) {
-    pieces.push({
-      color: opp,
-      type: types[i % types.length],
-      square: available.pop(),
-      isPlayer: false
-    });
+    const color = oppFor || (i % 2 === 0 ? "b" : "w");
+    pieces.push({ color, type: types[i % types.length], square: available.pop(), isPlayer: false });
   }
 
   return shuffle(pieces);
 };
+
+// ─────────────────────────────────────────────
+//  GAME SETTINGS  –  edit freely
+// ─────────────────────────────────────────────
+
+// Number of questions per game (both levels)
+const TOTAL_TRIES = 5;
+
+// Number of opponent pieces on the board
+const OPPONENT_PIECES = 10;
+
+// Difficulty presets
+// flash  : how long the board is shown before hiding (ms). 0 = always visible
+// pieces : how many player pieces appear on the board at once
+const DIFFICULTY_CONFIG = {
+  beginner: {
+    l1: { flash: 0,    pieces: 1 },
+    l2: { flash: 0,    pieces: 1 },
+  },
+  easy: {
+    l1: { flash: 5000, pieces: 2 },
+    l2: { flash: 5000, pieces: 2 },
+  },
+  medium: {
+    l1: { flash: 3000, pieces: 4 },
+    l2: { flash: 3000, pieces: 3 },
+  },
+  hard: {
+    l1: { flash: 1500, pieces: 5 },
+    l2: { flash: 1500, pieces: 3 },
+  },
+};
+
+// ─────────────────────────────────────────────
 
 const fmt = (ms) => `${Math.floor(ms / 1000)}.${Math.floor((ms % 1000) / 100)}s`;
 
@@ -226,21 +252,6 @@ function Board({ pieces, highlights, flipped }) {
   );
 }
 
-function Timer({ running, t0, t1 }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setNow(Date.now()), 100);
-    return () => clearInterval(id);
-  }, [running]);
-
-  const elapsed = running ? now - t0 : (t1 || now) - (t0 || now);
-  return (
-    <span style={{ fontFamily: "'JetBrains Mono','Courier New',monospace", fontSize: 20, fontWeight: 700, color: TEXT_BRIGHT, letterSpacing: 1 }}>
-      {fmt(elapsed)}
-    </span>
-  );
-}
 
 function PI({ type, color, size = 26 }) {
   return (
@@ -315,7 +326,6 @@ export default function App() {
   const [screen, setScreen] = useState("menu");
   const [pc, setPc] = useState("w");
   const [pieces, setPieces] = useState([]);
-  const [flipped, setFl] = useState(false);
   const [curIdx, setCI] = useState(0);
   const [ans, setAns] = useState([]);
   const [inp, setInp] = useState("");
@@ -327,27 +337,43 @@ export default function App() {
   const [l2t, setL2t] = useState([]);
   const [l2a, setL2a] = useState([]);
   const [l2e, setL2e] = useState([]);
-  const [revi, setRevi] = useState(null);
+
+  const [difficulty, setDifficulty] = useState("beginner");
+  const [boardVisible, setBoardVisible] = useState(true);
 
   const ref = useRef(null);
   const l2ref = useRef(null);
+  const flashTimerRef = useRef(null);
 
   const pp = pieces.filter((p) => p.isPlayer);
 
+  const flipped = pc === "b" || (pc === "h" && (
+    screen === "l1" ? pp[0]?.color === "b" :
+    screen === "l2" ? pp[0]?.color === "b" :
+    false
+  ));
+
   const s1 = () => {
-    const p = genPos(pc, 5, 10);
+    const cfg = DIFFICULTY_CONFIG[difficulty].l1;
+    const p = genPos(pc, cfg.pieces, OPPONENT_PIECES);
     setPieces(p);
     setCI(0);
     setAns([]);
     setInp("");
     setT0(Date.now());
     setT1(null);
+    setBoardVisible(true);
+    if (cfg.flash > 0) {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setBoardVisible(false), cfg.flash);
+    }
     setScreen("l1");
   };
 
   const s2 = () => {
-    const p = genPos(pc, 5, 10);
-    const playerPositions = p.filter((x) => x.isPlayer);
+    const cfg = DIFFICULTY_CONFIG[difficulty].l2;
+    const p = genPos(pc, cfg.pieces, OPPONENT_PIECES);
+    const playerPiece = p.find((x) => x.isPlayer);
     setPieces(p);
     setL2i(0);
     setL2inp("");
@@ -355,50 +381,79 @@ export default function App() {
     setL2a([]);
     setT0(Date.now());
     setT1(null);
-    setL2e(playerPositions.map((pr) => getThreats(pr, p)));
+    setL2e([getThreats(playerPiece, p)]);
+    setBoardVisible(true);
+    if (cfg.flash > 0) {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setBoardVisible(false), cfg.flash);
+    }
     setScreen("l2");
   };
 
   const sub1 = () => {
     const v = inp.trim().toLowerCase();
     if (!vSq(v)) return;
-    if (!pp[curIdx]) return;
-    const piece = pp[curIdx];
+    if (!pp[0]) return;
+    const piece = pp[0];
+    const cfg = DIFFICULTY_CONFIG[difficulty].l1;
     const isCorrect = piece.square === v;
     setAns((prev) => [...prev, { piece, attempt: v, correct: piece.square, isCorrect }]);
     setCI((prev) => prev + 1);
     setInp("");
-    if (curIdx + 1 >= pp.length) {
+    if (curIdx + 1 >= TOTAL_TRIES) {
       setT1(Date.now());
       setScreen("l1r");
+    } else {
+      const newPieces = genPos(pc, cfg.pieces, OPPONENT_PIECES);
+      setPieces(newPieces);
+      if (cfg.flash > 0) {
+        setBoardVisible(true);
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => setBoardVisible(false), cfg.flash);
+      }
     }
   };
 
   const sub2 = () => {
-    if (!pp[l2i]) return;
-    const exp = l2e[l2i] || [];
+    if (!pp[0]) return;
+    const cfg = DIFFICULTY_CONFIG[difficulty].l2;
+    const exp = l2e[0] || [];
     const giv = Array.from(new Set(l2t.map((x) => x.trim().toLowerCase()).filter(vSq))).sort();
     const expSorted = [...exp].sort();
     const isCorrect = expSorted.length === giv.length && expSorted.every((v, i) => v === giv[i]);
-    setL2a((prev) => [...prev, { piece: pp[l2i], expected: expSorted, provided: giv, isCorrect }]);
+    setL2a((prev) => [...prev, { piece: pp[0], expected: expSorted, provided: giv, isCorrect }]);
     setL2i((prev) => prev + 1);
     setL2t([]);
     setL2inp("");
-    if (l2i + 1 >= pp.length) {
+    if (l2i + 1 >= TOTAL_TRIES) {
       setT1(Date.now());
       setScreen("l2r");
+    } else {
+      const newPieces = genPos(pc, cfg.pieces, OPPONENT_PIECES);
+      const newPlayerPiece = newPieces.find((x) => x.isPlayer);
+      setPieces(newPieces);
+      setL2e([getThreats(newPlayerPiece, newPieces)]);
+      if (cfg.flash > 0) {
+        setBoardVisible(true);
+        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => setBoardVisible(false), cfg.flash);
+      }
     }
   };
 
   useEffect(() => {
-    if (screen === "l1" && ref.current) ref.current.focus();
-    if (screen === "l2" && l2ref.current) l2ref.current.focus();
-  }, [screen, curIdx, l2i]);
+    if (!boardVisible || DIFFICULTY_CONFIG[difficulty].l1.flash === 0) {
+      if (screen === "l1" && ref.current) ref.current.focus();
+    }
+    if (!boardVisible || DIFFICULTY_CONFIG[difficulty].l2.flash === 0) {
+      if (screen === "l2" && l2ref.current) l2ref.current.focus();
+    }
+  }, [screen, curIdx, l2i, boardVisible, difficulty]);
 
   const hl = (() => {
     const h = {};
-    if (screen === "l1" && pp[curIdx]) h[pp[curIdx].square] = "player";
-    if (screen === "l2" && pp[l2i]) h[pp[l2i].square] = "player";
+    if (screen === "l1" && pp[0] && DIFFICULTY_CONFIG[difficulty].l1.flash === 0) h[pp[0].square] = "player";
+    if (screen === "l2" && pp[0] && DIFFICULTY_CONFIG[difficulty].l2.flash === 0) h[pp[0].square] = "player";
     if (screen === "l1r") {
       ans.forEach((a) => {
         h[a.correct] = a.isCorrect ? "correct" : "wrong";
@@ -409,9 +464,6 @@ export default function App() {
         if (a.expected.length === 0 && a.provided.length === 0) return;
         a.expected.forEach((sq) => { h[sq] = "correct"; });
       });
-      if (revi !== null && l2a[revi]) {
-        h[l2a[revi].piece.square] = "player";
-      }
     }
     return h;
   })();
@@ -420,7 +472,7 @@ export default function App() {
   const isL2 = screen === "l2" || screen === "l2r";
   const data = isL2 ? l2a : ans;
   const nOk = data.filter((x) => x.isCorrect).length;
-  const perfect = isRes && pp.length > 0 && nOk === pp.length;
+  const perfect = isRes && data.length > 0 && nOk === data.length;
 
   const inputStyle = {
     flex: 1, padding: "10px 14px", borderRadius: 8,
@@ -454,7 +506,8 @@ export default function App() {
           <div style={{ display: "flex", gap: 8 }}>
             {[
               ["w", "wK", "White"],
-              ["b", "bK", "Black"]
+              ["b", "bK", "Black"],
+              ["h", null, "Hybrid"],
             ].map(([c, sk, l]) => (
               <button
                 key={c}
@@ -467,13 +520,41 @@ export default function App() {
                   transition: "all 0.15s ease",
                 }}
               >
-                <img src={svgPieces[sk]} alt={l} style={{ width: 32, height: 32 }} />
+                {sk && <img src={svgPieces[sk]} alt={l} style={{ width: 32, height: 32 }} />}
                 {l}
               </button>
             ))}
           </div>
 
           <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "6px 0" }} />
+
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, color: TEXT, fontWeight: 600, marginBottom: 2 }}>
+            Difficulty
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              ["beginner", "Beginner"],
+              ["easy", "Easy"],
+              ["medium", "Medium"],
+              ["hard", "Hard"],
+            ].map(([d, l]) => (
+              <button
+                key={d}
+                onClick={() => setDifficulty(d)}
+                style={{
+                  flex: 1, padding: "8px 4px", borderRadius: 8,
+                  border: difficulty === d ? `2px solid ${ACCENT}` : "2px solid transparent",
+                  background: difficulty === d ? "rgba(129,182,76,0.12)" : "rgba(255,255,255,0.04)",
+                  color: TEXT_BRIGHT, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "2px 0" }} />
 
           <Btn onClick={s1} variant="primary" style={{ width: "100%", padding: 14, fontSize: 16 }}>
             Level 1 — Coordinates
@@ -510,29 +591,32 @@ export default function App() {
         <Btn onClick={() => setScreen("menu")} variant="ghost" style={{ padding: "6px 14px", fontSize: 13 }}>
           Back
         </Btn>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>
-            {isL2 ? "Level 2 — Threats" : "Level 1 — Coordinates"}
-          </span>
-          <Timer running={!isRes && t0 !== null} t0={t0} t1={t1} />
-        </div>
-        <Btn onClick={() => setFl((f) => !f)} variant="ghost" style={{ padding: "6px 14px", fontSize: 13 }}>
-          Flip
-        </Btn>
+        <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>
+          {isL2 ? "Level 2 — Threats" : "Level 1 — Coordinates"}
+        </span>
+        <div style={{ width: 72 }} />
       </div>
 
-      <Board pieces={pieces} highlights={hl} flipped={flipped} />
+      {boardVisible && !isRes && (
+        <Board pieces={pieces} highlights={hl} flipped={flipped} />
+      )}
+      {screen === "l1r" && (
+        <Board pieces={ans.map((a) => ({ ...a.piece, square: a.correct }))} highlights={hl} flipped={pc === "b"} />
+      )}
+      {screen === "l2r" && (
+        <Board pieces={l2a.map((a) => ({ ...a.piece, square: a.piece.square }))} highlights={hl} flipped={pc === "b"} />
+      )}
 
       <div style={{ width: "min(88vw,560px)", marginTop: 16 }}>
-        {screen === "l1" && pp[curIdx] && (
+        {screen === "l1" && pp[0] && (!boardVisible || DIFFICULTY_CONFIG[difficulty].l1.flash === 0) && (
           <Card>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <PI type={pp[curIdx].type} color={pp[curIdx].color} size={32} />
+                <PI type={pp[0].type} color={pp[0].color} size={32} />
                 <span style={{ fontSize: 15, color: TEXT }}>What square is the highlighted piece on?</span>
               </div>
               <span style={{ fontSize: 13, color: TEXT, fontWeight: 600, background: "rgba(255,255,255,0.06)", padding: "4px 10px", borderRadius: 20 }}>
-                {curIdx + 1}/{pp.length}
+                {curIdx + 1}/{TOTAL_TRIES}
               </span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -549,15 +633,15 @@ export default function App() {
           </Card>
         )}
 
-        {screen === "l2" && pp[l2i] && (
+        {screen === "l2" && pp[0] && (!boardVisible || DIFFICULTY_CONFIG[difficulty].l2.flash === 0) && (
           <Card>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <PI type={pp[l2i].type} color={pp[l2i].color} size={32} />
+                <PI type={pp[0].type} color={pp[0].color} size={32} />
                 <span style={{ fontSize: 15, color: TEXT }}>Type the furthest square threatened in each direction</span>
               </div>
               <span style={{ fontSize: 13, color: TEXT, fontWeight: 600, background: "rgba(255,255,255,0.06)", padding: "4px 10px", borderRadius: 20 }}>
-                {l2i + 1}/{pp.length}
+                {l2i + 1}/{TOTAL_TRIES}
               </span>
             </div>
             {l2t.length > 0 && (
@@ -592,7 +676,7 @@ export default function App() {
           <Card>
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <div style={{ fontSize: 28, fontWeight: 800, color: perfect ? ACCENT : DANGER }}>
-                {perfect ? "Perfect!" : `${nOk}/${pp.length} Correct`}
+                {perfect ? "Perfect!" : `${nOk}/${ans.length} Correct`}
               </div>
               <div style={{ color: TEXT, fontSize: 14, marginTop: 4 }}>Completed in {fmt(t1 - t0)}</div>
             </div>
@@ -604,8 +688,15 @@ export default function App() {
                   background: a.isCorrect ? "rgba(129,182,76,0.08)" : "rgba(232,64,64,0.08)",
                 }}>
                   <PI type={a.piece.type} color={a.piece.color} size={24} />
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{a.correct}</span>
-                  {!a.isCorrect && <span style={{ color: DANGER, fontSize: 13 }}>you said {a.attempt}</span>}
+                  {a.isCorrect ? (
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: ACCENT }}>{a.correct}</span>
+                  ) : (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>
+                      <span style={{ color: DANGER, textDecoration: "line-through" }}>{a.attempt}</span>
+                      <span style={{ color: TEXT, fontSize: 11 }}>→</span>
+                      <span style={{ color: ACCENT }}>{a.correct}</span>
+                    </span>
+                  )}
                   <span style={{ marginLeft: "auto", fontSize: 16, color: a.isCorrect ? ACCENT : DANGER }}>
                     {a.isCorrect ? "\u2713" : "\u2717"}
                   </span>
@@ -619,37 +710,49 @@ export default function App() {
           </Card>
         )}
 
+        {!boardVisible && (screen === "l1" || screen === "l2") && (
+          <div style={{ textAlign: "center", marginTop: 24, color: TEXT, fontSize: 15, opacity: 0.6 }}>
+            Answer from memory!
+          </div>
+        )}
+
         {screen === "l2r" && (
           <Card>
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <div style={{ fontSize: 28, fontWeight: 800, color: perfect ? ACCENT : DANGER }}>
-                {perfect ? "Perfect!" : `${nOk}/${pp.length} Correct`}
+                {perfect ? "Perfect!" : `${nOk}/${l2a.length} Correct`}
               </div>
               <div style={{ color: TEXT, fontSize: 14, marginTop: 4 }}>Completed in {fmt(t1 - t0)}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
               {l2a.map((a, i) => {
                 const ok = a.isCorrect;
-                const isRev = revi === i;
+                const missing = a.expected.filter((sq) => !a.provided.includes(sq));
+                const extra = a.provided.filter((sq) => !a.expected.includes(sq));
                 return (
-                  <div
-                    key={i}
-                    onClick={() => setRevi(isRev ? null : i)}
-                    style={{
-                      padding: "10px 12px", borderRadius: 8, cursor: "pointer",
-                      background: ok ? "rgba(129,182,76,0.08)" : "rgba(232,64,64,0.08)",
-                      transition: "background 0.15s ease",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div key={i} style={{
+                    padding: "10px 12px", borderRadius: 8,
+                    background: ok ? "rgba(129,182,76,0.08)" : "rgba(232,64,64,0.08)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ok ? 0 : 8 }}>
                       <PI type={a.piece.type} color={a.piece.color} size={24} />
                       <span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: ok ? ACCENT : DANGER }}>{a.piece.square}</span>
                       <span style={{ marginLeft: "auto", fontSize: 16, color: ok ? ACCENT : DANGER }}>{ok ? "\u2713" : "\u2717"}</span>
                     </div>
-                    {isRev && (
-                      <div style={{ marginTop: 10, fontSize: 12, color: TEXT, display: "flex", flexDirection: "column", gap: 4 }}>
-                        <div>Expected: <span style={{ color: ACCENT }}>{a.expected.join(", ") || "(none)"}</span></div>
-                        <div>Given: <span style={{ color: a.isCorrect ? ACCENT : DANGER }}>{a.provided.join(", ") || "(none)"}</span></div>
+                    {!ok && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, paddingLeft: 34 }}>
+                        {missing.length > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ color: TEXT, opacity: 0.6 }}>missed:</span>
+                            {missing.map((sq) => <Tag key={sq} sq={sq} status="missing" />)}
+                          </div>
+                        )}
+                        {extra.length > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ color: TEXT, opacity: 0.6 }}>wrong:</span>
+                            {extra.map((sq) => <Tag key={sq} sq={sq} status="wrong" />)}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -662,6 +765,7 @@ export default function App() {
             </div>
           </Card>
         )}
+
       </div>
     </div>
   );
